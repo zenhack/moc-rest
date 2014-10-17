@@ -58,7 +58,7 @@ class ValidationError(APIError):
     """An exception indicating that the body of the request was invalid."""
 
 
-def rest_call(method, path):
+def rest_call(method, path, schema=None):
     """A decorator which registers an http mapping to a python api call.
 
     `rest_call` makes no modifications to the function itself, though the
@@ -70,19 +70,34 @@ def rest_call(method, path):
     path - the url-path to map the function to. The format is the same as for
            werkzeug's router (e.g. '/foo/<bar>/baz')
     method - the HTTP method for the api call (e.g. POST, GET...)
+    schema - A Schema from the schema library, which will be used to validate
+             the parsed json in the body of the request.
 
-    Any parameters to the function not designated in the url will be pulled
-    from a json object in the body of the requests.
+             Note that irrespective of the value of `schema`, the body must be
+             an json *object*.
 
-    For example, given:
+            If the schema parameter is omitted, a default schema will be
+            generated, which expects a json object with keys with the same names
+            as the decorated function's positional arguments, omitting those
+            which are supplied in the url. The values must be strings.
+
+    If a positional parameter is designated in `path`, it will be retrieved
+    from the url. Otherwise, it will be pulled from the json object by name.
+
+    Any additional elements of the json object will be passed in as keyword
+    arguments. Note that the default schema will prevent this; objects with
+    extra keys will cause validation to fail. However, user-supplied schema may
+    allow for additional keys.
+
+    Examples:
+
+    Given:
 
         @rest_call('POST', '/some-url/<baz>/<bar>')
         def foo(bar, baz, quux):
             pass
 
-    When a POST request to /some-url/*/* occurs, `foo` will be invoked
-    with its bar and baz arguments pulled from the url, and its quux from
-    the body. So, the request:
+    The request:
 
         POST /some-url/alice/bob HTTP/1.1
         <headers...>
@@ -90,6 +105,39 @@ def rest_call(method, path):
         {"quux": "eve"}
 
     Will invoke `foo('alice', 'bob', 'eve')`.
+
+
+    Given:
+
+        from schema import Schema, Optional
+
+        @rest_call('PUT', '/post-office/<box>',
+            schema=Schema({Optional('foo'): int,
+                           'bar': {
+                                    'x': int,
+                                    'y': str
+                                  }
+                            }))
+        def bar(box, foo=None **obj):
+            pass
+
+    The request:
+
+        PUT /post-office/my-box HTTP/1.1
+        <headers...>
+
+        {
+            "foo": 4,
+            "bar": {
+                "x": 7,
+                "y": "hello"
+            }
+        }
+
+    Will invoke:
+
+        bar('my-box', **{'foo': 4, 'bar': {'x': 7, 'y': 'hello'}})
+
 
     If the function raises an `APIError`, the error will be reported to the
     client with the exception's status_code attribute as the return status, and
@@ -104,8 +152,11 @@ def rest_call(method, path):
     will be a human-readable error message.
     """
     def register(f):
-        schema = _make_schema_for(path, f)
-        _url_map.add(Rule(path, endpoint=(f, schema), methods=[method]))
+        if schema is None:
+            _schema = _make_schema_for(path, f)
+        else:
+            _schema = schema
+        _url_map.add(Rule(path, endpoint=(f, _schema), methods=[method]))
         return f
     return register
 
@@ -172,6 +223,7 @@ def request_handler(request):
                 positional_args.append(values[name])
             elif name in request_body:
                 positional_args.append(request_body[name])
+                del request_body[name]
             else:
                 logger.error("The required parameter %r to api call %s was "
                              "missing from the request, but the schema didn't "
@@ -181,7 +233,7 @@ def request_handler(request):
         logger.debug('Recieved api call %s(%s)',
                      f.__name__,
                      ', '.join([repr(arg) for arg in positional_args]))
-        response_body = f(*positional_args)
+        response_body = f(*positional_args, **request_body)
         if not response_body:
             response_body = ""
         logger.debug("completed call to api function %s, "
