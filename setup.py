@@ -19,7 +19,27 @@ requirements = [str(r.req) for r in parse_requirements('requirements.txt')]
 
 setup(name='moc-rest',
       version='0.1',
+      description='A utility library used by various MOC projects',
+      long_description='Primarily, moc-rest provides support for '
+      'building RESTful APIs. It is not intended to be a general '
+      'purpose library per se, but is broken out since it is used by '
+      'more than one MOC project.',
+      author='Massachusetts Open Cloud Contributors',
+      author_email='moc-technical@googlegroups.com',
+      license='Apache License (2.0)',
       url='https://github.com/CCI-MOC/moc-rest',
       packages=find_packages(),
       install_requires=requirements,
+      classifiers=[
+          'Development Status :: 3 - Alpha',
+          'Environment :: Console',
+          'Topic :: System :: System Administration',
+          'Indended Audience :: System Administrators',
+          'Natural Language :: English',
+          'Operating System :: POSIX :: Linux',
+          'Programming Language :: Python :: 2',
+          'Programming Language :: Python :: 2.6',
+          'Programming Language :: Python :: 2.7',
+          'License :: OSI Approved :: Apache Software License',
+      ],
       )
