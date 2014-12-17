@@ -27,10 +27,9 @@ from werkzeug.routing import Map, Rule, parse_rule
 from werkzeug.exceptions import HTTPException, InternalServerError
 from werkzeug.local import Local, LocalManager
 
-from schema import Schema, SchemaError
 
-local = Local()
-local_manager = LocalManager([local])
+req_local = Local()
+local_manager = LocalManager([req_local])
 
 logger = logging.getLogger(__name__)
 
@@ -101,8 +100,7 @@ def rest_call(method, path):
     will be a human-readable error message.
     """
     def register(f):
-        schema = _make_schema_for(path, f)
-        _url_map.add(Rule(path, endpoint=(f, schema), methods=[method]))
+        _url_map.add(Rule(path, endpoint=f, methods=[method]))
         return f
     return register
 
@@ -140,46 +138,13 @@ def request_handler(request):
     """
     adapter = _url_map.bind_to_environ(request.environ)
     try:
-        (f, schema), values = adapter.match()
+        f, values = adapter.match()
 
-        if schema is not None:
-            # Parse the body as json and validate it with the schema:
-            try:
-                request_handle = request.environ['wsgi.input']
-                request_json = request_handle.read(request.content_length)
-                request_dict = schema.validate(json.loads(request_json))
-            except ValueError:
-                # This error is raised in the try clause when parsing the
-                # JSON fails.
-                raise ValidationError("Unable to parse request.")
-            except SchemaError:
-                # This error is raised in the try clause when validating the
-                # schema fails.
-                raise ValidationError("The request body %r is not valid for "
-                                      "this request." % request_json)
-        else:
-            # Nothing is needed from the body. We set it to an empty dict:
-            request_dict = {}
+        request_handle = request.environ['wsgi.input']
+        values['request_body'] = request_handle.read(request.content_length)
 
-        # marshall the arguments to the api call from the request, and then
-        # call it. See the docstring for rest_call for more explanation.
-        argnames, _, _, _ = inspect.getargspec(f)
-        positional_args = []
-        for name in argnames:
-            if name in values:
-                positional_args.append(values[name])
-            elif name in request_dict:
-                positional_args.append(request_dict[name])
-            else:
-                logger.error("The required parameter %r to api call %s was "
-                             "missing from the request, but the schema didn't "
-                             "catch it! This is a bug!", name, f.__name__)
-                raise InternalServerError()
-
-        logger.debug('Recieved api call %s(%s)',
-                     f.__name__,
-                     ', '.join([repr(arg) for arg in positional_args]))
-        response_body = f(*positional_args)
+        logger.debug('Recieved api call %s(**%r)', f.__name__, values)
+        response_body = f(**values)
         if not response_body:
             response_body = ""
         logger.debug("completed call to api function %s, "
