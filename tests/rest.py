@@ -81,7 +81,7 @@ class HttpEquivalenceTest(object):
     __metaclass__ = ABCMeta
 
     @abstractmethod
-    def api_call(self):
+    def api_call(self, request_body):
         """Invoke the api call directly."""
 
     @abstractmethod
@@ -113,6 +113,8 @@ class HttpEquivalenceTest(object):
         # First invoke the call over http. This should never raise exceptions.
         self.api_setup()
         req = Request(self.request())
+        req_body = req.environ['wsgi.input'].read()
+        req.environ['wsgi.input'].seek(0)
         resp = rest.request_handler(req)
         body = resp.get_data()
         self.api_teardown()
@@ -120,7 +122,7 @@ class HttpEquivalenceTest(object):
         # Now call it directly.
         try:
             self.api_setup()
-            ret = self.api_call()
+            ret = self.api_call(req_body)
             assert resp.status_code == 200
             if ret == '':
                 assert body == ''
@@ -146,10 +148,10 @@ class TestUrlArgs(HttpEquivalenceTest, HttpTest):
         HttpTest.setUp(self)
 
         @rest.rest_call('GET', '/func/<foo>/<bar>')
-        def func(foo, bar):
+        def func(foo, bar, request_body):
             return json.dumps([foo, bar])
 
-    def api_call(self):
+    def api_call(self, request_body):
         return json.dumps(['alice', 'bob'])
 
     def request(self):
@@ -163,10 +165,11 @@ class TestBodyArgs(HttpEquivalenceTest, HttpTest):
         HttpTest.setUp(self)
 
         @rest.rest_call('POST', '/func/foo')
-        def foo(bar, baz):
-            return json.dumps([bar, baz])
+        def foo(request_body):
+            obj = json.loads(request_body)
+            return json.dumps([obj['bar'], obj['baz']])
 
-    def api_call(self):
+    def api_call(self, request_body):
         return json.dumps(['bonnie', 'clyde'])
 
     def request(self):
@@ -181,10 +184,10 @@ class TestEquiv_basic_APIError(HttpEquivalenceTest, HttpTest):
         HttpTest.setUp(self)
 
         @rest.rest_call('GET', '/some_error')
-        def some_error():
-            self.api_call()
+        def some_error(request_body):
+            self.api_call(request_body)
 
-    def api_call(self):
+    def api_call(self, request_body):
         raise rest.APIError("Basic test of the APIError code.")
 
     def request(self):
@@ -204,41 +207,3 @@ def _is_error(resp, errtype):
         # the data may not parse as the above statement is expecting. Well,
         # it's not an error, so:
         return False
-
-
-class TestValidationError(HttpTest):
-    """basic tests for input validation."""
-
-    def setUp(self):
-        HttpTest.setUp(self)
-
-        @rest.rest_call('POST', '/give-me-an-e')
-        def api_call(foo, bar):
-            pass
-
-    def _do_request(self, data):
-        """Make a request to the endpoint with `data` in the body.
-
-        `data` should be a string -- the server will expect valid json, but
-        we want to write test cases with invalid input as well.
-        """
-        req = Request(wsgi_mkenv('POST', '/give-me-an-e', data=data))
-        return rest.request_handler(req)
-
-    def test_ok(self):
-        assert not _is_error(self._do_request(json.dumps({'foo': 'alice',
-                                                          'bar': 'bob'})),
-                             rest.ValidationError)
-
-    def test_bad_json(self):
-        assert _is_error(self._do_request('xploit'), rest.ValidationError)
-
-    def test_missing_bar(self):
-        assert _is_error(self._do_request(json.dumps({'foo': 'hello'})),
-                         rest.ValidationError)
-
-    def test_extra_baz(self):
-        assert _is_error(self._do_request(json.dumps({'foo': 'alice',
-                                                      'bar': 'bob',
-                                                      'baz': 'eve'})),
-                         rest.ValidationError)
