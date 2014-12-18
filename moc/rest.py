@@ -56,35 +56,34 @@ class ValidationError(APIError):
 def rest_call(method, path):
     """A decorator which registers an http mapping to a python api call.
 
-    `rest_call` makes no modifications to the function itself, though the
-    function need not worry about most of the details of the http request, see
-    below for details.
-
+    ``rest_call`` makes no modifications to the function itself.
     Arguments:
 
     path - the url-path to map the function to. The format is the same as for
-           werkzeug's router (e.g. '/foo/<bar>/baz')
+           werkzeug's router (e.g. ``'/foo/<bar>/baz'``)
     method - the HTTP method for the api call (e.g. POST, GET...)
 
-    Any parameters to the function not designated in the url will be pulled
-    from a json object in the body of the requests.
+    For each of the path compontents specified in ``path``, the decorated
+    function must have an argument by the same name. In addition, the function
+    must accept an argument ``request_body``, which will be the body of the
+    request (as a string).
 
     For example, given:
 
         @rest_call('POST', '/some-url/<bar>/<baz>')
-        def foo(bar, baz, quux):
+        def foo(bar, baz, request_body):
             pass
 
-    When a POST request to /some-url/*/* occurs, `foo` will be invoked
-    with its bar and baz arguments pulled from the url, and its quux from
-    the body. So, the request:
+    When a POST request to /some-url/*/* occurs, ``foo`` will be invoked
+    with its bar and baz arguments pulled from the url, and ``request_body``
+    will be the body of the request. So:
 
         POST /some-url/alice/bob HTTP/1.1
         <headers...>
 
         {"quux": "eve"}
 
-    Will invoke `foo('alice', 'bob', 'eve')`.
+    Will invoke ``foo('alice', 'bob', '{"quux": "eve"}')``.
 
     If the function raises an `APIError`, the error will be reported to the
     client with the exception's status_code attribute as the return status, and
