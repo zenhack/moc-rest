@@ -114,7 +114,12 @@ def request_handler(request):
         f, values = adapter.match()
 
         request_handle = request.environ['wsgi.input']
-        values['request_body'] = request_handle.read(request.content_length)
+        if request.content_length is None:
+            # content length is supplied by the client, and it can be absent.
+            # If it is, we assume there is no body.
+            values['request_body'] = ''
+        else:
+            values['request_body'] = request_handle.read(request.content_length)
 
         logger.debug('Recieved api call %s(**%r)', f.__name__, values)
         response_body = f(**values)
