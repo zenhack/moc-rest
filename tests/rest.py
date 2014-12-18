@@ -14,42 +14,16 @@
 from moc import rest
 
 from abc import ABCMeta, abstractmethod
-from StringIO import StringIO
 import unittest
 import json
-import sys
 
 from werkzeug.routing import Map
 from werkzeug.wrappers import Request
+from werkzeug.test import EnvironBuilder
 
 # We don't directly use this, but unless we import it, the coverage tool
 # complains and doesn't give us a report.
 import pytest
-
-
-def wsgi_mkenv(method, path, data=None):
-    """Helper routine to build a wsgi environment.
-
-    We need this to generate mock requests.
-    """
-    env = {
-        'REQUEST_METHOD': method,
-        'SCRIPT_NAME': '',
-        'PATH_INFO': path,
-        'SERVER_NAME': 'haas.test-env',
-        'SERVER_PORT': '5000',
-        'wsgi.version': (1, 0),
-        'wsgi.url_scheme': 'http',
-        'wsgi.errors': sys.stderr,
-        'wsgi.multithreaded': False,
-        'wsgi.multiprocess': False,
-        'wsgi.run_once': False,
-    }
-    if data is None:
-        env['wsgi.input'] = StringIO()
-    else:
-        env['wsgi.input'] = StringIO(data)
-    return env
 
 
 class HttpTest(unittest.TestCase):
@@ -89,7 +63,7 @@ class HttpEquivalenceTest(object):
         """Return a request which will invoke the api call.
 
         The request should take the form of a WSGI v1.0 environment.
-        The function `wsgi_mkenv` can be used to build a suitable
+        Werkzeug's ``EnvironBuilder`` can be used to build a suitable
         environment.
         """
 
@@ -155,7 +129,7 @@ class TestUrlArgs(HttpEquivalenceTest, HttpTest):
         return json.dumps(['alice', 'bob'])
 
     def request(self):
-        return wsgi_mkenv('GET', '/func/alice/bob')
+        return EnvironBuilder(method='GET', path='/func/alice/bob').get_environ()
 
 
 class TestBodyArgs(HttpEquivalenceTest, HttpTest):
@@ -173,8 +147,9 @@ class TestBodyArgs(HttpEquivalenceTest, HttpTest):
         return json.dumps(['bonnie', 'clyde'])
 
     def request(self):
-        return wsgi_mkenv('POST', '/func/foo',
-                          data=json.dumps({'bar': 'bonnie', 'baz': 'clyde'}))
+        return EnvironBuilder(method='POST', path='/func/foo',
+                              data=json.dumps({'bar': 'bonnie', 'baz': 'clyde'}),
+                              content_type='application/json').get_environ()
 
 
 class TestEquiv_basic_APIError(HttpEquivalenceTest, HttpTest):
@@ -191,7 +166,7 @@ class TestEquiv_basic_APIError(HttpEquivalenceTest, HttpTest):
         raise rest.APIError("Basic test of the APIError code.")
 
     def request(self):
-        return wsgi_mkenv('GET', '/some_error')
+        return EnvironBuilder(method='GET', path='/some_error').get_environ()
 
 
 def _is_error(resp, errtype):
