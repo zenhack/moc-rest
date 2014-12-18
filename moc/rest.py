@@ -19,7 +19,6 @@ The decorator `rest_call` and the class `APIError` are the main things of
 interest in this module.
 """
 import logging
-import inspect
 import json
 
 from werkzeug.wrappers import Request, Response
@@ -103,31 +102,6 @@ def rest_call(method, path):
         _url_map.add(Rule(path, endpoint=f, methods=[method]))
         return f
     return register
-
-
-def _make_schema_for(path, func):
-    """Build a default schema for `func` at `path`.
-
-    `func` is an api function.
-    `path` is a url path, as recognized by werkzeug's router.
-
-    `_make_schema_for` will build a schema to validate the body of a request,
-    which will expect the body to be a json object whose keys are (exactly)
-    the set of positional arguments to `func` which cannot be drawn from
-    `path`, and whose values are strings.
-
-    If all of the arguments to `func` are accounted for by `path`,
-    `_make_schema_for` will return `None` instead.
-    """
-    path_vars = [var for (converter, args, var) in parse_rule(path)
-                 if converter is not None]
-    argnames, _, _, _ = inspect.getargspec(func)
-    schema = dict((name, basestring) for name in argnames)
-    for var in path_vars:
-        del schema[var]
-    if schema == {}:
-        return None
-    return Schema(schema)
 
 
 def request_handler(request):
